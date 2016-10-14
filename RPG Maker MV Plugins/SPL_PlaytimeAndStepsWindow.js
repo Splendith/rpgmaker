@@ -76,11 +76,11 @@
     // Scene_Menu
     //-----------------------------------------------------------------------------
 
-	// Override
+    // Override
     var _Scene_Menu_prototype_create = Scene_Menu.prototype.create;
     Scene_Menu.prototype.create = function() {
         _Scene_Menu_prototype_create.call(this);
-        if(lineCount > 0 && !(lineCount === 1 && showCaption) ) {
+        if (lineCount > 0 && !(lineCount === 1 && showCaption)) {
             this.createStatWindow();
         } else if (lineCount <= 0) {
             console.warn("The SPL_PlaytimeAndStepsWindow will not activate because you are not showing any module in display settings.");
@@ -89,7 +89,7 @@
         }
     };
 
-	// New
+    // New
     Scene_Menu.prototype.createStatWindow = function() {
         this._statWindow = new Window_GameStat(0, 0);
         this._statWindow.y = Graphics.boxHeight - this._goldWindow.height - this._statWindow.height;
@@ -132,7 +132,7 @@
         var tempHeight = 0;
 
         // Caption
-        if(showCaption) {
+        if (showCaption) {
             this.changeTextColor(this.systemColor());
             this.drawText(textCaption, 0, 0, width, lineHeight);
             this.resetTextColor();
@@ -140,18 +140,18 @@
         }
 
         // Playtime
-        if(showPlaytime) {
-            if(!isPlaytimeFirst && showSteps) tempHeight += lineHeight;
+        if (showPlaytime) {
+            if (!isPlaytimeFirst && showSteps) tempHeight += lineHeight;
             this.drawIcon(iconPlaytime, 0, tempHeight);
             this.drawText($gameSystem.playtimeText(), indent, tempHeight, width, lineHeight);
-            if(!isPlaytimeFirst && showSteps) tempHeight -= lineHeight * 2;
+            if (!isPlaytimeFirst && showSteps) tempHeight -= lineHeight * 2;
             tempHeight += lineHeight;
         }
 
         // Steps
-        if(showSteps) {
+        if (showSteps) {
             this.drawIcon(iconSteps, 0, tempHeight);
-        	this.drawText($gameParty.steps(), indent, tempHeight, width, lineHeight);
+            this.drawText($gameParty.steps(), indent, tempHeight, width, lineHeight);
         }
     };
 
