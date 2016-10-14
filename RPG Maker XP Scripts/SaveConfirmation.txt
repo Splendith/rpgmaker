@@ -1,0 +1,308 @@
+#==============================================================================
+# ** Splendith Save Confirmation for RPG Maker XP
+#------------------------------------------------------------------------------
+# Author: Splendith
+# Version: 1.0
+# Last Updated: 2015-05-09
+#==============================================================================
+#
+# Description:
+#
+#   This script creates a confirmation dialog before saving in an existing
+#   file to confirm that your progress will be overwritten
+#
+#------------------------------------------------------------------------------
+#
+# Instructions:
+#
+#   To install this script, simply paste this script in script editor above
+#   the "Main" script
+#
+#   Here is the configuration constants of "SETUP CONFIGURATION" section
+# 
+#     CONFIRM_WINDOW_WIDTH   
+#       - Set the width of confirmation window
+# 
+#     DEFAULT_CHOICE:
+#       - Set the default choice by symbol :choice_cancel or :choice_confirm
+#
+#     CONFIRM_MESSAGE:        
+#       - Set the confirmation message
+#         - Use '%s' for showing file index number (optional)
+#
+#     CHOICE_CONFIRM:             
+#       - Set the message of confirm choice
+#
+#     CHOICE_CANCEL:         
+#       - Set the message of cancel choice
+# 
+#------------------------------------------------------------------------------
+#
+# Terms of use:
+#
+#   - Free to use in any commercial or non-commercial project.
+#   - Giving a credit is required in your project.
+#   
+#==============================================================================
+
+$imported = {} if $imported.nil?
+$imported["SPL-FileConfirmation"] = true
+
+#==============================================================================  
+# ** SETUP CONFIGURATION
+#==============================================================================
+
+module SPL
+  module FILE_CONFIRMATION
+    
+    CONFIRM_WINDOW_WIDTH = 360
+    DEFAULT_CHOICE = :choice_cancel
+    
+    CONFIRM_MESSAGE = "Confirm overwrite File %s?"
+    CHOICE_CONFIRM = "Overwrite"
+    CHOICE_CANCEL = "Cancel"
+    
+  end
+end
+
+#============================================================================== 
+# ** END SETUP CONFIGURATION
+#------------------------------------------------------------------------------
+#  The rest of code below is not recommended to modify unless you know what
+#  you are doing :)
+#==============================================================================
+
+
+#==============================================================================
+# ** Scene_Save
+#------------------------------------------------------------------------------
+#  This class performs save screen processing. 
+#==============================================================================
+
+class Scene_Save < Scene_File
+  
+  #--------------------------------------------------------------------------
+  # * ALIAS - Initialize Selection State
+  #--------------------------------------------------------------------------
+  alias orig_initialize initialize
+  def initialize
+    orig_initialize
+    @savefile_active = true
+    create_confirmation_windows
+  end  
+  
+  #--------------------------------------------------------------------------
+  # * NEW - Create Confirmation Windows
+  #--------------------------------------------------------------------------
+  def create_confirmation_windows
+    @confirm_window_message = Window_ConfirmMessage.new(SPL::FILE_CONFIRMATION::CONFIRM_WINDOW_WIDTH)
+    @confirm_window_command = Window_ConfirmCommand.new(SPL::FILE_CONFIRMATION::CONFIRM_WINDOW_WIDTH, SPL::FILE_CONFIRMATION::CHOICE_CONFIRM, SPL::FILE_CONFIRMATION::CHOICE_CANCEL)
+        
+    @confirm_window_message.x = 640/2-@confirm_window_message.width/2
+    @confirm_window_message.y = 480/2-(@confirm_window_command.height + @confirm_window_message.height)/2
+    @confirm_window_message.z = 120
+    
+    @confirm_window_command.x = @confirm_window_message.x
+    @confirm_window_command.y = @confirm_window_message.y + @confirm_window_message.height
+    @confirm_window_command.z = 120
+    
+    hide_confirmation_windows
+  end
+  
+  #--------------------------------------------------------------------------
+  # * NEW - Confirmation Check
+  #--------------------------------------------------------------------------
+  def confirmation_check
+    $game_system.se_play($data_system.decision_se)
+    file = File.open(@filename, "rb") rescue nil
+    if file.nil?
+      on_decision(@filename)
+    else
+      show_confirmation_windows
+    end
+  end
+  
+  #--------------------------------------------------------------------------
+  # * NEW - On Select Confirm
+  #--------------------------------------------------------------------------
+  def on_confirm
+    on_decision(@filename)
+    hide_confirmation_windows
+  end
+  
+  #--------------------------------------------------------------------------
+  # * NEW - On Select Cancel
+  #--------------------------------------------------------------------------
+  def on_cancel_confirmation
+    hide_confirmation_windows
+  end
+  
+  #--------------------------------------------------------------------------
+  # * NEW - Show Confirmation Windows
+  #--------------------------------------------------------------------------
+  def show_confirmation_windows
+    
+    @savefile_active = false
+    create_confirmation_background
+    @confirm_window_message.set_text(confirm_message)
+    @confirm_window_command.index = SPL::FILE_CONFIRMATION::DEFAULT_CHOICE == :choice_confirm ? 0:1
+    @confirm_window_message.visible = true
+    @confirm_window_message.active = true
+    @confirm_window_command.visible = true
+    @confirm_window_command.active = true
+  end
+  
+  #--------------------------------------------------------------------------
+  # * NEW - Hide Confirmation Windows
+  #--------------------------------------------------------------------------
+  def hide_confirmation_windows
+    @savefile_active = true
+    dispose_confirmation_background
+    @confirm_window_message.visible = false
+    @confirm_window_message.active = false
+    @confirm_window_command.visible = false
+    @confirm_window_command.active = false
+  end
+  
+  #--------------------------------------------------------------------------
+  # * NEW - Create Background
+  #--------------------------------------------------------------------------
+  def create_confirmation_background    
+    @confirmation_background_sprite = Sprite.new
+    @confirmation_background_sprite.bitmap = Bitmap.new(640, 480)
+    @confirmation_background_sprite.bitmap.fill_rect(0, 0, 640, 480, Color.new(0, 0, 0, 128)) 
+    @confirmation_background_sprite.z = 110
+  end
+  
+  #--------------------------------------------------------------------------
+  # * NEW - Free Background
+  #--------------------------------------------------------------------------
+  def dispose_confirmation_background
+    @confirmation_background_sprite.dispose if @confirmation_background_sprite
+  end
+  
+  #--------------------------------------------------------------------------
+  # * OVERWRITE - Frame Update
+  #--------------------------------------------------------------------------
+  def update
+    if @confirm_window_command.active
+      # Update confirmation window
+      @confirm_window_command.update
+      if Input.trigger?(Input::B)
+        $game_system.se_play($data_system.cancel_se)
+        on_cancel_confirmation
+        return
+      end
+      if Input.trigger?(Input::C)
+        case @confirm_window_command.index
+        when 0  # confirm
+          on_decision(@filename)
+          hide_confirmation_windows
+        when 1  # cancel
+          $game_system.se_play($data_system.decision_se)
+          on_cancel_confirmation
+        end
+        return
+      end
+    else
+      # Update file selection
+      @help_window.update
+      for i in @savefile_windows
+        i.update
+      end
+      if Input.trigger?(Input::C)
+        @filename = make_filename(@file_index)
+        confirmation_check
+        
+        $game_temp.last_file_index = @file_index
+        return
+      end
+      if Input.trigger?(Input::B)
+        on_cancel
+        return
+      end
+      if Input.repeat?(Input::DOWN)
+        if Input.trigger?(Input::DOWN) or @file_index < 3
+          $game_system.se_play($data_system.cursor_se)
+          @savefile_windows[@file_index].selected = false
+          @file_index = (@file_index + 1) % 4
+          @savefile_windows[@file_index].selected = true
+          return
+        end
+      end
+      if Input.repeat?(Input::UP)
+        if Input.trigger?(Input::UP) or @file_index > 0
+          $game_system.se_play($data_system.cursor_se)
+          @savefile_windows[@file_index].selected = false
+          @file_index = (@file_index + 3) % 4
+          @savefile_windows[@file_index].selected = true
+          return
+        end
+      end
+    end
+  end
+  
+  #--------------------------------------------------------------------------
+  # * NEW - Get Confirmation Message
+  #--------------------------------------------------------------------------
+  def confirm_message
+    sprintf(SPL::FILE_CONFIRMATION::CONFIRM_MESSAGE, @file_index + 1)  
+  end
+  
+end # Scene_Save
+
+
+#==============================================================================
+# ** NEW - Window_ConfirmMessage
+#------------------------------------------------------------------------------
+#  This window shows a confirmation message
+#==============================================================================
+
+class Window_ConfirmMessage < Window_Base
+  
+  #--------------------------------------------------------------------------
+  # * Object Initialization
+  #--------------------------------------------------------------------------
+  def initialize(width = 360, text = "")
+    super(0, 0, width, 64)
+    self.contents = Bitmap.new(width - 32, height - 32)
+    set_text(text)
+  end
+  
+  #--------------------------------------------------------------------------
+  # * Set Text
+  #--------------------------------------------------------------------------
+  def set_text(text = "")
+    @text = text
+    refresh
+  end
+  
+  #--------------------------------------------------------------------------
+  # * Refresh
+  #--------------------------------------------------------------------------
+  def refresh
+    self.contents.clear
+    self.contents.draw_text(0, 0, self.width - 40, 32, @text)
+  end
+  
+end # Window_ConfirmMessage
+
+
+#==============================================================================
+# ** NEW - Window_ConfirmCommand
+#------------------------------------------------------------------------------
+#  This window makes confirmation choices
+#==============================================================================
+
+class Window_ConfirmCommand < Window_Command
+  #--------------------------------------------------------------------------
+  # * Object Initialization
+  #--------------------------------------------------------------------------
+  def initialize(width = 360, text_confirm = "Confirm", text_cancel = "Cancel")
+    super(width, [text_confirm, text_cancel])
+  end
+end # Window_ConfirmCommand
+
+#==============================================================================
+# ** The End of File
+#==============================================================================

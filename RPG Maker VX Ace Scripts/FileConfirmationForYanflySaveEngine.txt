@@ -1,0 +1,384 @@
+#==============================================================================
+# ** Splendith File Confirmation add-on for Yanfly's Ace Save Engine
+#------------------------------------------------------------------------------
+# Author: Splendith
+# Version: 1.0
+# Last Updated: 2015-05-08
+#==============================================================================
+#
+# Requirement:
+#
+#   This add-on script REQUIRES Yanfly's Ace Save Engine
+#
+#   If you want a standalone script (no requirements) please download 
+#   Splendith Save Confirmation at
+#   https://preview.c9.io/splendith/rpg_maker_scripts/ace/SaveConfirmation.txt
+#
+#------------------------------------------------------------------------------
+#
+# Description:
+#
+#   This add-on creates a confirmation dialog before you save/load/delete in
+#   an existing file
+#
+#------------------------------------------------------------------------------
+#
+# Instructions:
+#
+#   To install this script, simply paste this script in script editor in
+#   Materials section (or 素材 in Japanese version)
+#
+#   Here is the configuration constants of "SETUP CONFIGURATION" section
+# 
+#     CONFIRM_WINDOW_WIDTH   
+#       - Set the width of confirmation window
+# 
+#     DEFAULT_CHOICE:
+#       - Set the default choice by symbol :choice_cancel or :choice_confirm
+#
+#     [TYPE]_CONFIRM_MESSAGE:        
+#       - Set the confirmation message in that type
+#         - Use '%s' for showing file index (optional)
+#         - You can use '\n' in the message as a new line
+#
+#     [TYPE]_CHOICE_CONFIRM:             
+#       - Set the message of confirm choice in that type
+#
+#     [TYPE]_CHOICE_CANCEL:         
+#       - Set the message of cancel choice in that type
+# 
+#------------------------------------------------------------------------------
+#
+# Terms of use:
+#
+#   - Depends on Yanfly's terms of use
+#
+#==============================================================================
+
+$imported = {} if $imported.nil?
+$imported["YEA-SPL-FileConfirmation"] = true
+
+#==============================================================================  
+# ** SETUP CONFIGURATION
+#==============================================================================
+module YEA
+  module SPL
+    module FILE_CONFIRMATION
+      
+      CONFIRM_WINDOW_WIDTH = 360
+      DEFAULT_CHOICE = :choice_cancel
+      
+      LOAD_CONFIRM_MESSAGE = "Current progress will be lost.\nConfirm load %s?"
+      LOAD_CHOICE_CONFIRM = "Load"
+      LOAD_CHOICE_CANCEL = "Cancel"
+      
+      SAVE_CONFIRM_MESSAGE = "Current file will be replaced.\nConfirm overwrite %s?"
+      SAVE_CHOICE_CONFIRM = "Overwrite"
+      SAVE_CHOICE_CANCEL = "Cancel"
+      
+      DELETE_CONFIRM_MESSAGE = "Current file will be lost.\nConfirm delete %s?"
+      DELETE_CHOICE_CONFIRM = "Delete"
+      DELETE_CHOICE_CANCEL = "Cancel"
+      
+    end
+  end
+end
+
+#============================================================================== 
+# ** END SETUP CONFIGURATION
+#------------------------------------------------------------------------------
+#  The rest of code below is not recommended to modify unless you know what
+#  you are doing :)
+#==============================================================================
+
+if !$imported["YEA-SaveEngine"]
+  msgbox("Warning:\nSplendith File Confirmation REQUIRES Yanfly's Ace Save Engine.\nThis add-on will be automatically disabled.\n\n(This message will not show in your production project)") if $TEST
+else
+
+#==============================================================================
+# ** Scene_File
+#------------------------------------------------------------------------------
+#  This class performs common processing for the save screen and load screen.
+#==============================================================================
+
+class Scene_File < Scene_MenuBase
+
+  #--------------------------------------------------------------------------
+  # * ALIAS - Initialize Selection State
+  #--------------------------------------------------------------------------
+  alias orig_init_selection init_selection
+  def init_selection
+    orig_init_selection
+  end  
+  
+  #--------------------------------------------------------------------------
+  # * ALIAS - Start Processing
+  #--------------------------------------------------------------------------
+  alias orig_start start
+  def start
+    orig_start
+    create_confirmation_windows
+  end
+  
+  #--------------------------------------------------------------------------
+  # * OVERWRITE - YANFLY - create_action_window
+  #--------------------------------------------------------------------------
+  def create_action_window
+    wx = @file_window.width
+    wy = @help_window.height
+    @action_window = Window_FileAction.new(wx, wy, @file_window)
+    @action_window.help_window = @help_window
+    @action_window.set_handler(:cancel, method(:on_action_cancel))
+    @action_window.set_handler(:load, method(:on_action_before_load))
+    @action_window.set_handler(:save, method(:on_action_before_save))
+    @action_window.set_handler(:delete, method(:on_action_before_delete))
+  end
+    
+  #--------------------------------------------------------------------------
+  # * NEW - Action Before Yanfly's on_action_load
+  #--------------------------------------------------------------------------
+  def on_action_before_load
+    @type = :type_load
+    
+    if SceneManager.scene_is?(Scene_Load)
+      on_action_load
+    else
+      show_confirmation_windows
+    end
+  end
+    
+  #--------------------------------------------------------------------------
+  # * NEW - Action Before Yanfly's on_action_save
+  #--------------------------------------------------------------------------
+  def on_action_before_save
+    @type = :type_save
+    header = DataManager.load_header(@file_window.index)
+    if header.nil?
+      on_action_save
+    else
+      show_confirmation_windows
+    end
+  end
+    
+  #--------------------------------------------------------------------------
+  # * NEW - Action Before Yanfly's on_action_delete
+  #--------------------------------------------------------------------------
+  def on_action_before_delete
+    @type = :type_delete
+    show_confirmation_windows
+  end
+  
+  #--------------------------------------------------------------------------
+  # * NEW - On Select Confirm
+  #--------------------------------------------------------------------------
+  def on_confirm
+    on_action_load if @type == :type_load
+    on_action_save if @type == :type_save
+    on_action_delete if @type == :type_delete
+    hide_confirmation_windows
+    @action_window.activate
+  end
+  
+  #--------------------------------------------------------------------------
+  # * NEW - On Select Cancel
+  #--------------------------------------------------------------------------
+  def on_cancel
+    hide_confirmation_windows
+    @action_window.activate
+  end
+  
+  #--------------------------------------------------------------------------
+  # * NEW - Create Confirmation Windows
+  #--------------------------------------------------------------------------
+  def create_confirmation_windows
+    @confirm_window_message = Window_ConfirmMessage.new(YEA::SPL::FILE_CONFIRMATION::CONFIRM_WINDOW_WIDTH)
+    @confirm_window_command = Window_ConfirmCommand.new(YEA::SPL::FILE_CONFIRMATION::CONFIRM_WINDOW_WIDTH)
+    
+    @confirm_window_message.z = 120
+    @confirm_window_command.z = 120
+
+    hide_confirmation_windows
+  end
+  
+  #--------------------------------------------------------------------------
+  # * NEW - Show Confirmation Windows
+  #--------------------------------------------------------------------------
+  def show_confirmation_windows
+    Sound.play_ok
+    
+    @action_window.deactivate
+    create_confirmation_background
+    @confirm_window_message.set_text(confirm_message)
+    @confirm_window_command.set_text(choice_confirm, choice_cancel)
+    @confirm_window_message.x = Graphics.width/2-@confirm_window_message.width/2
+    @confirm_window_message.y = Graphics.height/2-(@confirm_window_command.height + @confirm_window_message.height)/2
+    @confirm_window_command.x = @confirm_window_message.x
+    @confirm_window_command.y = @confirm_window_message.y + @confirm_window_message.height
+    @confirm_window_command.set_handler(:choice_confirm, method(:on_confirm))
+    @confirm_window_command.set_handler(:choice_cancel, method(:on_cancel))
+    @confirm_window_command.set_handler(:cancel, method(:on_cancel))
+    
+    @confirm_window_command.select_symbol(default_choice)
+    @confirm_window_message.show.activate
+    @confirm_window_command.show.activate
+  end
+  
+  #--------------------------------------------------------------------------
+  # * NEW - Hide Confirmation Windows
+  #--------------------------------------------------------------------------
+  def hide_confirmation_windows
+    dispose_confirmation_background
+    @confirm_window_message.hide.deactivate
+    @confirm_window_command.hide.deactivate
+  end
+  
+  #--------------------------------------------------------------------------
+  # * NEW - Create Confirmation Background
+  #--------------------------------------------------------------------------
+  def create_confirmation_background    
+    @confirmation_background_sprite = Sprite.new
+    @confirmation_background_sprite.bitmap = Graphics.snap_to_bitmap
+    @confirmation_background_sprite.bitmap.blur
+    
+    @confirmation_background_sprite.color.set(16, 16, 16, 128)
+    @confirmation_background_sprite.z = 110
+  end
+  
+  #--------------------------------------------------------------------------
+  # * NEW - Free Confirmation Background
+  #--------------------------------------------------------------------------
+  def dispose_confirmation_background
+    @confirmation_background_sprite.dispose if @confirmation_background_sprite
+  end
+  
+  #--------------------------------------------------------------------------
+  # * NEW - Get Default Choice
+  #--------------------------------------------------------------------------
+  def default_choice
+    YEA::SPL::FILE_CONFIRMATION::DEFAULT_CHOICE
+  end
+  
+  #--------------------------------------------------------------------------
+  # * NEW - Get Confirmation Message
+  #--------------------------------------------------------------------------
+  def confirm_message
+    message = YEA::SPL::FILE_CONFIRMATION::LOAD_CONFIRM_MESSAGE if @type == :type_load
+    message = YEA::SPL::FILE_CONFIRMATION::SAVE_CONFIRM_MESSAGE if @type == :type_save
+    message = YEA::SPL::FILE_CONFIRMATION::DELETE_CONFIRM_MESSAGE if @type == :type_delete
+    sprintf(message, Vocab::File + " #{@file_window.index + 1}")  
+  end
+  
+  #--------------------------------------------------------------------------
+  # * NEW - Get Confirm Choice
+  #--------------------------------------------------------------------------
+  def choice_confirm
+    message = YEA::SPL::FILE_CONFIRMATION::LOAD_CHOICE_CONFIRM if @type == :type_load
+    message = YEA::SPL::FILE_CONFIRMATION::SAVE_CHOICE_CONFIRM if @type == :type_save
+    message = YEA::SPL::FILE_CONFIRMATION::DELETE_CHOICE_CONFIRM if @type == :type_delete
+    message
+  end
+  
+  #--------------------------------------------------------------------------
+  # * NEW - Get Cancel Choice
+  #--------------------------------------------------------------------------
+  def choice_cancel
+    message = YEA::SPL::FILE_CONFIRMATION::LOAD_CHOICE_CANCEL if @type == :type_load
+    message = YEA::SPL::FILE_CONFIRMATION::SAVE_CHOICE_CANCEL if @type == :type_save
+    message = YEA::SPL::FILE_CONFIRMATION::DELETE_CHOICE_CANCEL if @type == :type_delete
+    message
+  end
+
+end # Scene_File
+
+#==============================================================================
+# ** NEW - Window_ConfirmMessage
+#------------------------------------------------------------------------------
+#  This window shows a confirmation message
+#==============================================================================
+
+class Window_ConfirmMessage < Window_Base
+  
+  #--------------------------------------------------------------------------
+  # * Object Initialization
+  #--------------------------------------------------------------------------
+  def initialize(width = 360, text = "")
+    @text = text
+    super(0, 0, width, window_height)
+    set_text(@text)
+  end
+  
+  #--------------------------------------------------------------------------
+  # * Set Text
+  #--------------------------------------------------------------------------
+  def set_text(text = "")
+    @text = text
+    self.height = fitting_height(text.lines.count)
+    refresh
+  end
+  
+  #--------------------------------------------------------------------------
+  # * Refresh
+  #--------------------------------------------------------------------------
+  def refresh
+    create_contents
+    contents.clear
+    draw_text_ex(0, 0, @text)
+  end
+  
+  #--------------------------------------------------------------------------
+  # * Get Window Height
+  #--------------------------------------------------------------------------
+  def window_height
+    fitting_height(@text.lines.count)
+  end
+  
+end # Window_ConfirmMessage
+
+#==============================================================================
+# ** NEW - Window_ConfirmCommand
+#------------------------------------------------------------------------------
+#  This window makes confirmation choices
+#==============================================================================
+
+class Window_ConfirmCommand < Window_Command
+  
+  #--------------------------------------------------------------------------
+  # * Object Initialization
+  #--------------------------------------------------------------------------
+  def initialize(width = 360, text_confirm = "Confirm", text_cancel = "Cancel")
+    @width = width
+    super(0, 0)
+    set_text(text_confirm, text_cancel)
+  end
+  
+  #--------------------------------------------------------------------------
+  # * Get Window Width
+  #--------------------------------------------------------------------------
+  def window_width
+    return @width
+  end
+    
+  #--------------------------------------------------------------------------
+  # * Set Text
+  #--------------------------------------------------------------------------
+  def set_text(text_confirm = "Confirm", text_cancel = "Cancel")
+    @text_confirm = text_confirm
+    @text_cancel = text_cancel
+    refresh
+  end
+  
+  #--------------------------------------------------------------------------
+  # * Create Command List
+  #--------------------------------------------------------------------------
+  def make_command_list
+    add_command(@text_confirm, :choice_confirm)
+    add_command(@text_cancel, :choice_cancel)
+  end
+  
+end # Window_ConfirmCommand
+
+end # $imported["YEA-SaveEngine"]
+
+#==============================================================================
+# ** The End of File
+#==============================================================================

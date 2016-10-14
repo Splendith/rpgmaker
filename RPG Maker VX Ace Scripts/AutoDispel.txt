@@ -1,0 +1,189 @@
+#==============================================================================
+# ** Splendith Auto Dispel Passive Skill Feature for RPG Maker VX ACE
+#------------------------------------------------------------------------------
+# Author: Splendith
+# Version: 1.0
+# Last Updated: 2015-05-10
+# Inspiration: anatong123
+#==============================================================================
+#
+# Description:
+#
+#   This script creates auto dispel passive skill system
+#
+#   The auto dispel passive skill feature : A unit which has this skill will 
+#   immediately interrupt an opponent from using a skill in an opponent's turn.
+#   It can set which skill type will be dispelled and a dispel success rate
+#
+#------------------------------------------------------------------------------
+#
+# Instructions:
+#
+#   To install this script, simply paste this script in script editor in
+#   Materials section (or 素材 in Japanese version)
+# 
+#   Put the following notetag(s) in "note" section in a skill you want in the 
+#   skill database.
+#
+#   <auto_dispel x y%>            or
+#   <auto_dispel x y% targeted>
+#
+#   let x and y are custom integers
+#     x: a skill type id which can be dispelled 
+#        (e.g. common = 0, special = 1, magic = 2)
+#     y: a success rate of auto dispel (0 to 100)
+#
+#   "targeted" word means the unit will only autocast when the unit is being 
+#   targeted from opponent's skill if "targeted" word does not set, the unit
+#   will autocast in every opponent's skill using
+#
+#   In your skill setting, we recommend you to set "Occasion" as
+#   "Never" and "Animation" as "052:Silence"
+#
+#   You can add notetag(s) more than one in a skill seperated by line
+#   
+#   Auto dispel works in both player/enemy skill (in enemy skill, it will
+#   ignore the action skill rating)
+#
+#   Auto dispel will not automatically use if it's type has been sealed by 
+#   some features 
+#   (e.g. you set "Auto dispel" skill as a magic skill type in the database
+#   and the unit that has this skill has become "silence". Thus, "Auto dispel"
+#   will be disabled)
+#
+#   Auto dispel always use 0 MP and 0 TP and works independently as a normal
+#   skill configuration
+#
+#------------------------------------------------------------------------------
+#
+# Terms of use:
+#
+#   - Free to use in any commercial or non-commercial project.
+#   - Giving a credit is required in your project.
+#   
+#==============================================================================
+
+#============================================================================== 
+# ** THERE IS NO NEED TO SETUP ANY CONFIGURATIONS IN THIS SCRIPT
+#------------------------------------------------------------------------------
+#  The rest of code below is not recommended to modify unless you know what
+#  you are doing :)
+#==============================================================================
+
+$imported = {} if $imported.nil?
+$imported["SPL-AutoDispel"] = true
+
+#==============================================================================
+# ** Scene_Battle
+#------------------------------------------------------------------------------
+#  This class performs battle screen processing.
+#==============================================================================
+
+class Scene_Battle < Scene_Base
+  
+  #--------------------------------------------------------------------------
+  # * OVERWRITE - Use Skill/Item
+  #--------------------------------------------------------------------------
+  def use_item
+    item = @subject.current_action.item
+        
+    @log_window.display_use_item(@subject, item)
+    @subject.use_item(item)
+    refresh_status
+    targets = @subject.current_action.make_targets.compact
+    
+    if item.is_a?(RPG::Skill)
+      is_auto_dispel = false
+      
+      if @subject.instance_of? Game_Enemy
+        $game_party.alive_members.shuffle.each do |unit|
+          unit.skills.each do |skill|
+            next if unit.skill_type_sealed?(skill.stype_id)
+            skill.auto_dispels.each do |auto_dispel|
+              if (auto_dispel[2] and targets.include? unit) or !auto_dispel[2]
+                if(item.stype_id == auto_dispel[0] and rand < auto_dispel[1])
+                  is_auto_dispel = true
+                  @log_window.wait
+                  @log_window.display_use_item(unit, skill)
+                  show_animation([@subject], skill.animation_id)
+                  break
+                end
+              end
+            end
+            break if is_auto_dispel
+          end
+          break if is_auto_dispel
+        end
+      else
+        $game_troop.alive_members.shuffle.each do |unit|
+          unit.enemy.actions.each do |action|
+            next if !unit.conditions_met?action
+            skill = $data_skills[action.skill_id]
+            next if unit.skill_type_sealed?(skill.stype_id)
+            skill.auto_dispels.each do |auto_dispel|
+              if (auto_dispel[2] and targets.include? unit) or !auto_dispel[2]
+                if(item.stype_id == auto_dispel[0] and rand < auto_dispel[1])
+                  is_auto_dispel = true
+                  @log_window.wait
+                  @log_window.display_use_item(unit, skill)
+                  show_animation([@subject], skill.animation_id)
+                  break
+                end
+              end
+            end
+            break if is_auto_dispel
+          end
+          break if is_auto_dispel
+        end
+      end      
+    end
+    
+    return if is_auto_dispel
+    
+    show_animation(targets, item.animation_id)
+    targets.each {|target| item.repeats.times { invoke_item(target, item) } }
+  end
+  
+end # Scene_Battle
+
+
+#==============================================================================
+# ** RPG::Skill
+#==============================================================================
+
+module RPG
+  class Skill < UsableItem
+    
+    #--------------------------------------------------------------------------
+    # * NEW - Get Auto Dispel List
+    #--------------------------------------------------------------------------
+    def auto_dispels
+      return @auto_dispels unless @auto_dispels.nil?
+      load_notetag_auto_dispels
+      return @auto_dispels
+    end
+    
+    #--------------------------------------------------------------------------
+    # * NEW - Get Auto Dispel Note Tag
+    #--------------------------------------------------------------------------
+    def load_notetag_auto_dispels
+      @auto_dispels = []
+      self.note.split(/[\r\n]+/).each do |line|
+        regex = /<\s*auto_dispel\s*(\d+)\s*(\d+)%\s*(targeted|)\s*>/i
+        matches = line.match(regex)
+        if matches
+          stype_id = matches[1].to_i
+          rate = matches[2].to_i * 0.01
+          targeted = matches[3].downcase.to_s == "targeted" ? true : false
+          auto_dispel = [stype_id, rate, targeted]
+          @auto_dispels.push(auto_dispel)
+        end
+      end
+    end
+    
+  end # Skill
+end # RPG
+
+#==============================================================================
+# ** The End of File
+#==============================================================================

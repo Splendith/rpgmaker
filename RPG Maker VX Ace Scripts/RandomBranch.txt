@@ -1,0 +1,168 @@
+#==============================================================================
+# ** Splendith Random branch for RPG Maker VX ACE
+#------------------------------------------------------------------------------
+# Author: Splendith
+# Version: 1.0
+# Last Updated: 2015-05-10
+#==============================================================================
+#
+# Description:
+#
+#   This script will allow you to add a random branch path to ...
+#
+#------------------------------------------------------------------------------
+#
+# Instructions:
+#
+#   To install this script, simply paste this script in script editor in
+#   Materials section (or 素材 in Japanese version)
+# 
+#   In an event window, add the following statement in the "Script..." command 
+#   (the last command in event page 3)
+#
+#   begin_branch
+#     - this expression will begin the branch area
+#
+#   branch or branch(p)
+#     - the path
+#
+#   end_path
+#     - this expression will end the branch area
+#
+#   Example in Event Settings
+#
+#     @>Script: begin_random_branch
+#     @>Script: branch(5)
+#     @>Text: -,- Normal, Bottom
+#      :    : Message A
+#     @>Script: branch(10)
+#     @>Text: -,- Normal, Bottom
+#      :    : Message B1
+#     @>Text: -,- Normal, Bottom
+#      :    : Message B2
+#     @>Script: branch
+#     @>Text: -,- Normal, Bottom
+#      :    : Message C
+#     Script: end_random_branch
+#   
+#   The example event will only shows either [Message A], [Message B1-B2], 
+#   or [Message C] depends on priority value according to priority value.
+#
+#   [Message B1-B2] will get the most chance to appear from priority value 10
+#   followed by Message A (priority: 5) and Message C (priority: 1)
+#
+#   You can download an example project at ...
+#
+#------------------------------------------------------------------------------
+#
+# Terms of use:
+#
+#   - Free to use in any commercial or non-commercial project.
+#   - Giving a credit is required in your project.
+#   
+#==============================================================================
+
+#============================================================================== 
+# ** THERE IS NO NEED TO SETUP ANY CONFIGURATIONS IN THIS SCRIPT
+#------------------------------------------------------------------------------
+#  The rest of code below is not recommended to modify unless you know what
+#  you are doing :)
+#==============================================================================
+
+$imported = {} if $imported.nil?
+$imported["SPL-Randombranch"] = true
+
+#==============================================================================
+# ** Game_Interpreter
+#------------------------------------------------------------------------------
+#  An interpreter for executing event commands. This class is used within the
+# Game_Map, Game_Troop, and Game_Event classes.
+#==============================================================================
+
+class Game_Interpreter
+  
+  def begin_random_branch
+    sum = 0
+    index_list = {}
+    i = @index+1
+
+    while i < @list.size and !@list[i].end_branch? do
+      command = @list[i]
+      if command.start_branch?
+        @index = @list.size
+        msgbox "Splendith Random branch Error:\nbegin_branch collision!"
+        return
+      end
+      if command.branch?
+        sum += command.branch_rate
+        index_list[i] = command.branch_rate
+      end
+      i+=1
+    end
+
+    if i == @list.size
+      @index = i
+      msgbox "Splendith Random branch Error:\nend_branch not found!"
+      return
+    end
+    
+    @end_branch_index = i
+    
+    return if sum == 0
+    
+    @in_branch = true
+    
+    index_list.each do |key, value|
+      random = (1..sum).to_a.sample
+      if random <= value
+        @index = key
+        break
+      end
+      sum -= value
+    end
+    
+  end
+  
+  def branch(rate=1)
+    @index = @end_branch_index if !@in_branch.nil? and @in_branch
+  end
+  
+  def end_random_branch 
+    @in_branch = false
+  end
+  
+end
+
+#==============================================================================
+# ** RPG::EventCommand
+#==============================================================================
+
+module RPG
+  class EventCommand
+    @@branch_regex = /^\s*branch\s*(\s*\(\s*(\d+)\s*\))?\s*$/i
+    
+    def start_branch?
+      return (@code == 355 and @parameters[0].strip == "begin_random_branch")
+    end
+    
+    def branch?
+      return false if @code != 355
+      matches = @parameters[0].strip.match(@@branch_regex)
+      return !matches.nil?
+    end
+    
+    def end_branch?
+      return (@code == 355 and @parameters[0].strip == "end_random_branch")
+    end
+    
+    def branch_rate
+      return nil if @code != 355
+      matches = @parameters[0].strip.match(@@branch_regex)
+      return nil if !matches
+      return 1 if !matches[2] or matches[2].to_i < 1
+      matches[2].to_i
+    end
+    
+  end
+end
+

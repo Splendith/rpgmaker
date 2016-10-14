@@ -1,0 +1,1467 @@
+#==============================================================================
+# ** Splendith Save & Load Engine for RPG Maker VX ACE
+#------------------------------------------------------------------------------
+# Author: Splendith
+# Version: 1.5
+# Last Updated: 2015-05-19
+# Created: 2015-05-15
+#==============================================================================
+#
+# Description:
+#
+#   This script represents the new save interface. The highlight of this 
+#   interface is 'preload' feature that allows you to see your real-time 
+#   saved game before you load! Anyway, this feature is still in beta, I do 
+#   not guarantee in any risks. Currently, I try for a few days without
+#   issues. Please tell me if it has any problems :)
+#   
+#------------------------------------------------------------------------------
+#
+# Instructions:
+#
+#   To install this script, simply paste this script in script editor in
+#   Materials section (or 素材 in Japanese version)
+#
+#   Here is the configuration constants of "SETUP CONFIGURATION" section
+# 
+#     Loading Screen Type:   
+#       - Set the type of loading screen with symbol
+#         :preload - shows real-time saved game before load (STILL IN BETA)
+#         :screenshot_music - shows saved screenshot with saved BGM & BGS
+#         :screenshot - shows only saved screenshot with the title music
+# 
+#     Message Configuration:
+#       - Set the configuration of any messages
+#
+#     Icon Configuration:        
+#       - Set the configuration of any icons (map, gold, and playtime). You
+#         can get the icon index by opening skill/item database and choose
+#         an icon
+#
+#     Blending Configuration:             
+#       - Set the color to be blended with the preload game or images
+#         with Color.new(r, g, b, a) value
+#          . r - the red color value (0-255)
+#          . g - the green color value (0-255)
+#          . b - the blue color value (0-255)
+#          . a - the alpha value (0-255). Less value, more transparency
+#         You can get the color values in any color picker tools
+#          
+#     The empty file image can be set at "Graphics/System/EmptyFile.png"
+#     You can leave it blank or delete it if you have no idea
+# 
+#------------------------------------------------------------------------------
+#
+# Compatible add-ons
+#
+#   - Splendith Save Confirmation
+#     Download at https://preview.c9.io/splendith/rpg_maker_scripts/ace/SaveConfirmation.txt
+#
+#------------------------------------------------------------------------------
+#
+# Terms of use:
+#
+#   - Free to use in any non-commercial project. Giving a credit to Splendith
+#     is required in your project
+#   - For commercial use, please contact me at kunuch@gmail.com
+#   - Please preserve the script header
+#   
+#------------------------------------------------------------------------------
+#
+# Thank you:
+#
+#   - Screen Capture and GDI+ interface by cremno
+#   - Inspiration by Yanfly
+#
+#==============================================================================
+
+$imported = {} if $imported.nil?
+$imported["SPL-SaveEngine"] = true
+
+#==============================================================================  
+# ** SETUP CONFIGURATION
+#==============================================================================
+
+module SPL
+  module SAVE_ENGINE
+    
+    # Loading Screen Type
+    LOADING_TYPE = :preload    # :preload, :screenshot_music, :screenshot
+    
+    # Set true to enable the NPC's autonomous movement (for :preload type only)
+    PRELOAD_MOVEMENT = true
+    
+    # Message Configuration
+    SAVE_MESSAGE = "Save which file?"
+    LOAD_MESSAGE = "Load which file?"
+    SAVE_COMPLETED_MESSAGE = "Save Completed"
+    EMPTY_SLOT_MESSAGE = "Empty slot"
+    
+    # Icon Configuration
+    MAP_ICON_INDEX = 231
+    GOLD_ICON_INDEX = 361
+    PLAYTIME_ICON_INDEX = 280
+    
+    # Blending Configuration
+    PRELOAD_BLENDING = Color.new(0, 0, 0, 60)
+    SCREENSHOT_BLENDING = Color.new(0, 0, 0, 48)
+    EMPTY_FILE_IMAGE_BLENDING = Color.new(0, 0, 0, 0)
+    
+    # The empty file image can be set at "Graphics/System/EmptyFile.png"
+    # You can leave it blank or delete it if you have no idea
+    
+  end
+end
+
+#============================================================================== 
+# ** END SETUP CONFIGURATION
+#------------------------------------------------------------------------------
+#  The rest of code below is not recommended to modify unless you know what
+#  you are doing :)
+#==============================================================================
+
+
+
+#==============================================================================
+# ** MODULES PART **
+#==============================================================================
+
+#==============================================================================
+# ** Cache
+#------------------------------------------------------------------------------
+#  This module loads graphics, creates bitmap objects, and retains them.
+# To speed up load times and conserve memory, this module holds the
+# created bitmap object in the internal hash, allowing the program to
+# return preexisting objects when the same bitmap is requested again.
+#==============================================================================
+
+module Cache
+  
+  #--------------------------------------------------------------------------
+  # * NEW - 
+  #--------------------------------------------------------------------------
+  def self.load_savedata_screenshot(filename)
+    load_bitmap(DataManager.screenshot_path, filename)
+  end
+  
+end # Cache
+
+
+#==============================================================================
+# ** DataManager
+#------------------------------------------------------------------------------
+#  This module manages the database and game objects. Almost all of the 
+# global variables used by the game are initialized by this module.
+#==============================================================================
+
+module DataManager
+
+  #--------------------------------------------------------------------------
+  # * OVERWRITE - Create Save Header
+  #--------------------------------------------------------------------------
+  def self.make_save_header
+    header = {}
+    header[:characters] = $game_party.characters_for_savefile
+    header[:playtime_s] = $game_system.playtime_s
+    header[:system]     = Marshal.load(Marshal.dump($game_system))
+    header[:actors]     = Marshal.load(Marshal.dump($game_actors))
+    header[:map]      = Marshal.load(Marshal.dump($game_map))
+    header[:party]      = Marshal.load(Marshal.dump($game_party))
+    header
+  end
+  
+  #--------------------------------------------------------------------------
+  # * ALIAS - Execute Save
+  #--------------------------------------------------------------------------
+  class << self; alias cur_save_game save_game; end
+  def self.save_game(index)
+    cur_save_game(index)
+    basename = screenshot_path + make_screenshot_filename(index) 
+    SceneManager.background_bitmap_noblur.save(basename)
+    Cache.clear
+    true
+  end
+    
+  #--------------------------------------------------------------------------
+  # * NEW - Create Filename
+  #     index : File Index
+  #--------------------------------------------------------------------------
+  def self.make_screenshot_filename(index)
+    sprintf("Save%02d.png", index + 1)
+  end
+  
+  #--------------------------------------------------------------------------
+  # * NEW - Get/Build Screenshot Path
+  #--------------------------------------------------------------------------
+  def self.screenshot_path
+    Dir.mkdir("SaveData") unless Dir.exist?("SaveData")
+    Dir.mkdir("SaveData\\Screenshots") unless Dir.exist?("SaveData\\Screenshots")
+    sprintf("SaveData\\Screenshots\\")
+  end
+  
+  #--------------------------------------------------------------------------
+  # * NEW - Determine If a Specific Screenshot File Exists
+  #--------------------------------------------------------------------------
+  def self.screenshot_file_exist?(index)
+    basename = screenshot_path + make_screenshot_filename(index) 
+    return File.exist?(basename)
+  end
+  
+  #--------------------------------------------------------------------------
+  # * NEW - Check Empty File Image
+  #--------------------------------------------------------------------------
+  def self.emptyfile_path
+    return nil unless File.exist?("Graphics\\System\\EmptyFile.png")
+    return "Graphics\\System\\EmptyFile.png"
+  end
+  
+end # DataManager
+
+
+#==============================================================================
+# ** SceneManager
+#------------------------------------------------------------------------------
+#  This module manages scene transitions. For example, it can handle
+# hierarchical structures such as calling the item screen from the main menu
+# or returning from the item screen to the main menu.
+#==============================================================================
+
+module SceneManager
+  
+  #--------------------------------------------------------------------------
+  # * ADDITION - Module Instance Variables
+  #--------------------------------------------------------------------------
+  @background_bitmap_noblur = nil         # background bitmap
+    
+  #--------------------------------------------------------------------------
+  # * ALIAS - Execute
+  #--------------------------------------------------------------------------
+  class << self; alias cur_run run; end
+  def self.run
+    $preload = false
+    cur_run
+  end
+  
+  #--------------------------------------------------------------------------
+  # * OVERWRITE - Create Snapshot to Use as Background
+  #--------------------------------------------------------------------------
+  def self.snapshot_for_background
+    @background_bitmap.dispose if @background_bitmap
+    @background_bitmap_noblur.dispose if @background_bitmap_noblur
+    @background_bitmap = Graphics.snap_to_bitmap
+    @background_bitmap_noblur = @background_bitmap.dup
+    @background_bitmap.blur
+  end
+  
+  #--------------------------------------------------------------------------
+  # * NEW - Get Background Bitmap
+  #--------------------------------------------------------------------------
+  def self.background_bitmap_noblur
+    @background_bitmap_noblur
+  end
+  
+end # SceneManager
+
+
+
+#==============================================================================
+# ** GAME OBJECTS PART **
+#==============================================================================
+
+#==============================================================================
+# ** Game_System
+#------------------------------------------------------------------------------
+#  This class handles system data. It saves the disable state of saving and 
+# menus. Instances of this class are referenced by $game_system.
+#==============================================================================
+
+class Game_System
+ 
+  #--------------------------------------------------------------------------
+  # * NEW - Play On-save BGM
+  #--------------------------------------------------------------------------
+  def play_bgm_on_save
+    @bgm_on_save.play
+  end
+  
+  #--------------------------------------------------------------------------
+  # * NEW - Play On-save BGS
+  #--------------------------------------------------------------------------
+  def play_bgs_on_save
+    @bgs_on_save.play
+  end
+  
+end # Game_System
+
+
+#==============================================================================
+# ** Game_Map
+#------------------------------------------------------------------------------
+#  This class handles maps. It includes scrolling and passage determination
+# functions. The instance of this class is referenced by $game_map.
+#==============================================================================
+
+class Game_Map
+  
+  #--------------------------------------------------------------------------
+  # * OVERWRITE - Frame Update
+  #     main:  Interpreter update flag
+  #--------------------------------------------------------------------------
+  def update(main = false)
+    refresh if @need_refresh
+    update_interpreter if main and !$preload
+    update_scroll
+    update_events
+    update_vehicles
+    update_parallax
+    @screen.update
+  end
+  
+end # Game_Map
+
+
+#==============================================================================
+# ** Game_Event
+#------------------------------------------------------------------------------
+#  This class handles events. Functions include event page switching via
+# condition determinants and running parallel process events. Used within the
+# Game_Map class.
+#==============================================================================
+
+class Game_Event < Game_Character
+  
+  #--------------------------------------------------------------------------
+  # * ALIAS - Update During Autonomous Movement
+  #--------------------------------------------------------------------------
+  alias cur_update_self_movement update_self_movement
+  def update_self_movement
+    return if $preload and !SPL::SAVE_ENGINE::PRELOAD_MOVEMENT
+    cur_update_self_movement
+  end
+  
+end # Game_Event
+
+
+#==============================================================================
+# ** SCENES PART **
+#==============================================================================
+
+#==============================================================================
+# ** Scene_Title
+#------------------------------------------------------------------------------
+#  This class performs the title screen processing.
+#==============================================================================
+
+class Scene_Title < Scene_Base
+  
+  #--------------------------------------------------------------------------
+  # * OVERWRITE - [Continue] Command
+  #--------------------------------------------------------------------------
+  def command_continue
+    close_command_window
+    fadeout_all(500) unless SPL::SAVE_ENGINE::LOADING_TYPE == :screenshot
+    
+    if SPL::SAVE_ENGINE::LOADING_TYPE != :preload
+      SceneManager.call(Scene_Load)
+      return
+    end
+    
+    if DataManager.load_game(DataManager.latest_savefile_index)
+      $preload = true
+      SceneManager.call(Scene_Map)
+    else
+      Sound.play_buzzer
+    end
+  end
+  
+end # Scene_Title
+
+#==============================================================================
+# ** Scene_Map
+#------------------------------------------------------------------------------
+#  This class performs the map screen processing.
+#==============================================================================
+
+class Scene_Map < Scene_Base
+   
+  #--------------------------------------------------------------------------
+  # * OVERWRITE - Start Processing
+  #--------------------------------------------------------------------------
+  def start
+    super
+    @index = DataManager.latest_savefile_index
+    SceneManager.clear unless $preload
+    $game_player.straighten
+    $game_map.refresh
+    $game_message.visible = false
+    create_spriteset
+    create_all_windows
+    @menu_calling = false
+  end
+
+  #--------------------------------------------------------------------------
+  # * OVERWRITE - Create All Windows
+  #--------------------------------------------------------------------------
+  def create_all_windows
+    create_message_window
+    create_scroll_text_window
+    create_location_window
+    create_savefile_command
+    create_savefile_info
+    if $preload
+      @savefile.alive = true
+      @info_window.alive = true
+    end
+  end
+
+  #--------------------------------------------------------------------------
+  # * NEW - Create Save File Command
+  #--------------------------------------------------------------------------
+  def create_savefile_command
+    @savefile = Window_SaveFileCommand.new(@index, false)
+    @savefile.set_handler(:ok, method(:on_load_success))
+    @savefile.set_handler(:cancel, method(:remove_preload))
+  end
+  
+  #--------------------------------------------------------------------------
+  # * NEW - Remove Preload State
+  #--------------------------------------------------------------------------
+  def remove_preload
+    $preload = false
+    return_scene
+  end
+  
+  #--------------------------------------------------------------------------
+  # * NEW - Create Save File Information
+  #--------------------------------------------------------------------------
+  def create_savefile_info
+    @info_window = Window_SaveFileInfo.new(@savefile, false)
+  end
+  
+  #--------------------------------------------------------------------------
+  # * NEW - Confirm Save File
+  #--------------------------------------------------------------------------
+  def on_savefile_ok
+    if !DataManager.load_game(@index)
+      Sound.play_buzzer
+    end
+  end
+  
+  #--------------------------------------------------------------------------
+  # * NEW - Processing When Load Is Successful
+  #--------------------------------------------------------------------------
+  def on_load_success
+    Sound.play_load
+    $game_system.on_after_load
+    @savefile.slide_out if @savefile
+    @info_window.slide_out  if @info_window
+  end
+  
+  #--------------------------------------------------------------------------
+  # * OVERWRITE - Frame Update
+  #--------------------------------------------------------------------------
+  def update
+    super
+    $game_map.update(true)
+    if !$preload
+      
+      $game_player.update
+      $game_timer.update
+    else
+      if @index != @savefile.index
+        @index =  @savefile.index
+        @savefile.alive = false
+        @info_window.alive = false
+        
+        pass = false
+        error_count_limit = 5
+        error_count = 0
+        while !pass and error_count <= error_count_limit
+          pass = true
+          begin
+            on_savefile_ok if @savefile.current_item_enabled?
+            dispose_spriteset
+            create_spriteset
+            create_all_windows
+          rescue
+            pass = false
+            error_count += 1
+          end
+        end
+        
+        if error_count > error_count_limit
+          puts "Splendith Save & Load Engine :: CAUTION ERROR!"
+        end
+          
+      end
+    end
+    @spriteset.update
+    update_scene if scene_change_ok?
+  end
+  
+  #--------------------------------------------------------------------------
+  # * OVERWRITE - Determine if Menu is Called due to Cancel Button
+  #--------------------------------------------------------------------------
+  def update_call_menu
+    if $preload || $game_system.menu_disabled || $game_map.interpreter.running?
+      @menu_calling = false
+    else
+      @menu_calling ||= Input.trigger?(:B)
+      call_menu if @menu_calling && !$game_player.moving?
+    end
+  end
+  
+end # Scene_Map
+
+
+#==============================================================================
+# ** Scene_File
+#------------------------------------------------------------------------------
+#  This class performs common processing for the save screen and load screen.
+#==============================================================================
+
+class Scene_File < Scene_MenuBase
+  
+  #--------------------------------------------------------------------------
+  # * OVERWRITE - Start Processing
+  #--------------------------------------------------------------------------
+  def start
+    super
+    create_savefile_command
+    create_savefile_info
+    init_selection
+  end
+  
+  #--------------------------------------------------------------------------
+  # * NEW - Create Save File Command (Interface)
+  #--------------------------------------------------------------------------
+  def create_savefile_command
+  end
+
+  #--------------------------------------------------------------------------
+  # * NEW - Create Save File Information
+  #--------------------------------------------------------------------------
+  def create_savefile_info
+    @info_window = Window_SaveFileInfo.new(@savefile)
+  end
+  
+  #--------------------------------------------------------------------------
+  # * ALIAS - Save File [OK]
+  #--------------------------------------------------------------------------
+  alias cur_on_savefile_ok on_savefile_ok
+  def on_savefile_ok
+    @index = @savefile.index
+    cur_on_savefile_ok
+  end
+  
+  #--------------------------------------------------------------------------
+  # * OVERWRITE - Get Current Index
+  #--------------------------------------------------------------------------
+  def index
+    @savefile.index
+  end
+  
+  #--------------------------------------------------------------------------
+  # * OVERWRITE - Initialize Selection State
+  #--------------------------------------------------------------------------
+  def init_selection
+    @index = first_savefile_index
+  end
+  
+  #--------------------------------------------------------------------------
+  # * OVERWRITE - Termination Processing
+  #--------------------------------------------------------------------------
+  def terminate
+    super
+  end
+  
+  #--------------------------------------------------------------------------
+  # * OVERWRITE - Frame Update
+  #--------------------------------------------------------------------------
+  def update
+    super
+  end
+  
+end # Scene_File
+
+
+#==============================================================================
+# ** Scene_Save
+#------------------------------------------------------------------------------
+#  This class performs save screen processing. 
+#==============================================================================
+
+class Scene_Save < Scene_File
+
+  #--------------------------------------------------------------------------
+  # * NEW - Start Processing
+  #--------------------------------------------------------------------------
+  def start
+    super
+    @complete = false
+  end
+  
+  #--------------------------------------------------------------------------
+  # * NEW - Create Save File Command
+  #--------------------------------------------------------------------------
+  def create_savefile_command
+    super
+    @savefile = Window_SaveFileCommand.new(SceneManager.scene.first_savefile_index)
+    
+    if $imported["SPL-FileConfirmation"]
+      @savefile.set_handler(:ok, method(:confirmation_check))
+    else
+      @savefile.set_handler(:ok, method(:on_savefile_ok))
+    end
+
+    @savefile.set_handler(:cancel, method(:return_scene))
+  end
+  
+  #--------------------------------------------------------------------------
+  # * OVERWRITE - Processing When Save Is Successful
+  #--------------------------------------------------------------------------
+  def on_save_success
+    Sound.play_save
+    @savefile_ok = Window_SaveOK.new(360, SPL::SAVE_ENGINE::SAVE_COMPLETED_MESSAGE)
+    @complete = true
+    @info_window.refresh
+  end
+  
+  #--------------------------------------------------------------------------
+  # * NEW - Frame Update
+  #--------------------------------------------------------------------------
+  def update
+    super
+    if @complete and (Input.trigger?(Input::C) or Input.trigger?(Input::B))
+      @complete = false
+      return_scene
+    end
+  end
+
+end # Scene_Save
+
+
+#==============================================================================
+# ** Scene_Load
+#------------------------------------------------------------------------------
+#  This class performs load screen processing. 
+#==============================================================================
+
+class Scene_Load < Scene_File
+  
+  #--------------------------------------------------------------------------
+  # * NEW - Create Save File Command
+  #--------------------------------------------------------------------------
+  def create_savefile_command
+    super
+    @savefile = Window_SaveFileCommand.new(SceneManager.scene.first_savefile_index)
+    @savefile.set_handler(:ok, method(:on_savefile_ok))
+    @savefile.set_handler(:cancel, method(:return_scene))
+  end
+  
+  #--------------------------------------------------------------------------
+  # * OVERWRITE - Confirm Save File
+  #--------------------------------------------------------------------------
+  def on_savefile_ok
+    super
+    if DataManager.load_game(@index)
+      on_load_success
+    else
+      Sound.play_buzzer
+    end
+  end
+  
+  #--------------------------------------------------------------------------
+  # * Processing When Load Is Successful
+  #--------------------------------------------------------------------------
+  def on_load_success
+    Sound.play_load
+    $game_system.on_after_load
+    SceneManager.goto(Scene_Map)
+  end
+  
+  #--------------------------------------------------------------------------
+  # * OVERWRITE - Post-Start Processing
+  #--------------------------------------------------------------------------
+  def post_start
+    if SPL::SAVE_ENGINE::LOADING_TYPE != :screenshot
+      Graphics.transition(30)
+    else
+      perform_transition
+    end
+    Input.update
+  end
+  
+  #--------------------------------------------------------------------------
+  # * OVERWRITE - Termination Processing
+  #--------------------------------------------------------------------------
+  def terminate
+    Graphics.freeze
+    dispose_all_windows
+    dispose_main_viewport
+  end
+    
+end # Scene_Load
+
+
+
+#==============================================================================
+# ** WINDOWS PART **
+#==============================================================================
+
+#==============================================================================
+# ** Window_SaveFileCommand
+#------------------------------------------------------------------------------
+#  This window displays the list of save files
+#==============================================================================
+
+class Window_SaveFileCommand < Window_HorzCommand
+  
+  #--------------------------------------------------------------------------
+  # * Object Initialization
+  #--------------------------------------------------------------------------
+  def initialize(file_index, alive = true)
+    super(200, Graphics.height - window_height)
+    self.opacity = 0
+    self.width = Graphics.width - 200
+    
+    @slide_dy = -1
+    @dy = 0
+    
+    message = "For a specific scene ONLY!"
+    message = SPL::SAVE_ENGINE::LOAD_MESSAGE if SceneManager.scene_is?(Scene_Load) or SceneManager.scene_is?(Scene_Map)
+    message = SPL::SAVE_ENGINE::SAVE_MESSAGE if SceneManager.scene_is?(Scene_Save)
+    
+    @background_sprite = Sprite.new
+    @background_sprite.y = Graphics.height - window_height
+    @background_sprite.bitmap = Bitmap.new(Graphics.width, window_height)
+    @background_sprite.bitmap.fill_rect(0, 0, Graphics.width, window_height, Color.new(0,0,0,96)) 
+    @background_sprite.z = 99
+    @background_sprite.bitmap.draw_text(12, 0, 200, window_height, message)
+    
+    self.alive = alive
+    
+    activate
+    select(file_index)
+  end
+    
+  #--------------------------------------------------------------------------
+  # * Show/Hide All Elements in This Class
+  #--------------------------------------------------------------------------
+  def alive=(val)
+    @alive = val
+    if @alive == false
+      hide_background
+      self.openness = 0
+    else
+      self.openness = 255
+      show_background
+      refresh
+    end
+  end
+  def alive
+    @alive
+  end
+  
+  #--------------------------------------------------------------------------
+  # * Slide Out Elements out of Screen
+  #--------------------------------------------------------------------------
+  def slide_out
+    @slide_dy = 30
+    @dy = 120.0/@slide_dy
+  end
+  
+  #--------------------------------------------------------------------------
+  # * Animation for Slide Out Method
+  #--------------------------------------------------------------------------
+  def reposition
+    @background_sprite.y += @dy if @background_sprite
+    self.y +=  @dy
+  end
+  
+  alias cur_update update
+  def update
+    cur_update
+    if @slide_dy > 0
+      @slide_dy -= 1
+      reposition
+    elsif @slide_dy == 0
+      @alive = false
+    end 
+  end
+  
+  #--------------------------------------------------------------------------
+  # * Free
+  #--------------------------------------------------------------------------
+  alias cur_dispose dispose
+  def dispose
+    dispose_background
+    cur_dispose
+  end
+  
+  #--------------------------------------------------------------------------
+  # * Free Background
+  #--------------------------------------------------------------------------
+  def dispose_background
+    @background_sprite.dispose if @background_sprite
+  end
+  
+  #--------------------------------------------------------------------------
+  # * Hide Background
+  #--------------------------------------------------------------------------
+  def hide_background
+    @background_sprite.visible = false if @background_sprite
+  end
+  
+  #--------------------------------------------------------------------------
+  # * Show Background
+  #--------------------------------------------------------------------------
+  def show_background
+    @background_sprite.visible = true if @background_sprite
+  end
+    
+  #--------------------------------------------------------------------------
+  # * Get Activation State of Selection Item
+  #--------------------------------------------------------------------------
+  def current_item_enabled?
+    header = DataManager.load_header(index)
+    return false if header.nil? && (SceneManager.scene_is?(Scene_Load) || SceneManager.scene_is?(Scene_Map))
+    return true
+  end
+  
+  #--------------------------------------------------------------------------
+  # * Refresh
+  #--------------------------------------------------------------------------
+  def refresh
+    return unless @alive
+    create_contents
+    draw_all_items
+  end
+  
+  #--------------------------------------------------------------------------
+  # * Get Digit Count
+  #--------------------------------------------------------------------------
+  def col_max
+    return 8
+  end
+  
+  #--------------------------------------------------------------------------
+  # * Set Leading Digits
+  #--------------------------------------------------------------------------
+  def top_col=(col)
+    col = 0 if col < 0
+    #col = col_max - 1 if col > col_max - 1
+    self.ox = col * (item_width + spacing)
+  end
+  
+  #--------------------------------------------------------------------------
+  # * Get Number of Items
+  #--------------------------------------------------------------------------
+  def item_max; return DataManager.savefile_max; end
+  
+  #--------------------------------------------------------------------------
+  # * Draw Item
+  #--------------------------------------------------------------------------
+  def draw_item(index)
+    header = DataManager.load_header(index)
+    enabled = !header.nil?
+    rect = item_rect(index)
+    rect.width -= 0
+    change_color(normal_color, enabled)
+    text = sprintf((index + 1).to_s)
+    draw_text(rect.x, rect.y, rect.width, line_height, text, 1)
+  end
+  
+end # Window_SaveFileCommand
+
+
+#==============================================================================
+# ** Window_SaveFileInfo
+#------------------------------------------------------------------------------
+#  This window displays save information on the save and load screens.
+#==============================================================================
+
+class Window_SaveFileInfo < Window_Base
+  #--------------------------------------------------------------------------
+  # * Object Initialization
+  #--------------------------------------------------------------------------
+  def initialize(savefile, alive = true)
+    super(0, 0, Graphics.width, Graphics.height)
+    self.opacity = 0
+    @savefile = savefile
+    @current_index = @savefile.index
+    @slide_dy = -1
+    @dy = 0
+    @op = 255
+    self.alive = alive
+    @selected = false
+  end
+  
+  #--------------------------------------------------------------------------
+  # * Show/Hide All Elements in This Class
+  #--------------------------------------------------------------------------
+  def alive=(val)
+    @alive = val
+    if @alive == false
+      dispose_background
+      self.openness = 0
+    else
+      self.openness = 255
+      refresh
+    end
+  end
+  def alive
+    @alive
+  end
+  
+  #--------------------------------------------------------------------------
+  # * Slide Out Elements out of Screen
+  #--------------------------------------------------------------------------
+  def slide_out
+    @slide_dy = 30
+    @dy = 120.0/@slide_dy;
+    @op = 255.0/@slide_dy
+  end
+  
+  #--------------------------------------------------------------------------
+  # * Animation for Slide Out Method
+  #--------------------------------------------------------------------------
+  def reposition
+    @background_sprite.opacity -= @op
+    @top_background_sprite.y -= @dy
+    @level_bg.y -= @dy
+    self.y -= @dy
+  end
+  
+  #--------------------------------------------------------------------------
+  # * Frame Update
+  #--------------------------------------------------------------------------
+  def update
+    super
+    
+    if @slide_dy > 0
+      @slide_dy -= 1
+      reposition
+    elsif @slide_dy == 0
+      @alive = false
+      $preload = false
+    end 
+    
+    return if @current_index == @savefile.index
+    @current_index = @savefile.index
+    refresh
+  end
+  
+  #--------------------------------------------------------------------------
+  # * Refresh
+  #--------------------------------------------------------------------------
+  def refresh
+    return unless @alive
+    contents.clear
+    @header = DataManager.load_header(@savefile.index)
+    dispose_background
+      
+    draw_background
+    draw_top_background
+    draw_no_files
+        
+    @characters_contents_dx = draw_characters
+    dw = (!@characters_contents_dx.nil?) ? (@characters_contents_dx - 10) : 180
+    
+    draw_location(0, line_height*0, dw)
+    draw_gold(0, line_height*1, dw)
+    draw_playtime(0, line_height*2, dw)
+    
+    play_music if SceneManager.scene_is?(Scene_Load)
+    play_music if SceneManager.scene_is?(Scene_Map)
+  end
+  
+  #--------------------------------------------------------------------------
+  # * Draw Background
+  #--------------------------------------------------------------------------
+  def draw_background
+    @background_sprite = Sprite.new
+    
+    if !@header
+      if DataManager.emptyfile_path.nil?
+        @background_sprite.bitmap = Bitmap.new(Graphics.width, Graphics.height)
+        @background_sprite.bitmap.fill_rect(0, 0, Graphics.width, Graphics.height, Color.new(50,50,50,255))
+      else
+        @background_sprite.bitmap = Bitmap.new(DataManager.emptyfile_path)
+        @background_sprite.color.set(SPL::SAVE_ENGINE::EMPTY_FILE_IMAGE_BLENDING)
+      end
+      return
+    end
+    if SceneManager.scene_is?(Scene_Map)
+      @background_sprite.bitmap = Bitmap.new(Graphics.width, Graphics.height)
+      @background_sprite.bitmap.fill_rect(0, 0, Graphics.width, Graphics.height, SPL::SAVE_ENGINE::PRELOAD_BLENDING)
+    else
+      if DataManager.screenshot_file_exist?(@savefile.index)
+        @background_sprite.bitmap = Cache.load_savedata_screenshot(DataManager.make_screenshot_filename(@savefile.index))
+        @background_sprite.color.set(SPL::SAVE_ENGINE::SCREENSHOT_BLENDING)
+      else
+        @background_sprite.bitmap = Bitmap.new(Graphics.width, Graphics.height)
+        @background_sprite.bitmap.fill_rect(0, 0, Graphics.width, Graphics.height, Color.new(50,50,50,255))
+      end
+    end
+    @background_sprite.z = 1
+    
+  end
+  
+  #--------------------------------------------------------------------------
+  # * Draw Top Background
+  #--------------------------------------------------------------------------
+  def draw_top_background
+    @top_background_sprite = Sprite.new
+    @top_background_sprite.bitmap = Bitmap.new(Graphics.width, 100)
+    @top_background_sprite.bitmap.fill_rect(0, 0, Graphics.width, 100, Color.new(0,0,0,72))
+    @top_background_sprite.z = 10
+  end
+  
+  def draw_no_files
+    return if @header
+    reset_font_settings
+    make_font_bigger
+    text = SPL::SAVE_ENGINE::EMPTY_SLOT_MESSAGE
+    draw_text(0,38 - 32/2, contents.width, 32, text, 1)
+  end  
+  
+  #--------------------------------------------------------------------------
+  # * Draw Location
+  #--------------------------------------------------------------------------
+  def draw_location(dx, dy, dw)
+    return if !@header
+    return if @header[:map].nil?
+    return if $data_mapinfos[@header[:map].map_id].nil?
+    reset_font_settings
+    draw_icon(SPL::SAVE_ENGINE::MAP_ICON_INDEX, dx, dy)
+    text = @header[:map].display_name
+    text = $data_mapinfos[@header[:map].map_id].name if text == ""
+    draw_text(dx + 40, dy, dw - 40, line_height, text)
+  end
+  
+  #--------------------------------------------------------------------------
+  # * Draw Gold
+  #--------------------------------------------------------------------------
+  def draw_gold(dx, dy, dw)
+    return if !@header
+    return if @header[:party].nil?
+    reset_font_settings
+    draw_icon(SPL::SAVE_ENGINE::GOLD_ICON_INDEX, dx, dy)
+    text = @header[:party].gold.to_s
+    cx = text_size(text).width
+    draw_text(dx + 40, dy, dw - 40, line_height, text, 0)
+    change_color(system_color)
+    text = Vocab::currency_unit
+    draw_text(dx + 40 + cx + 2, dy, dw - cx - 40, line_height, text, 0)
+  end
+  
+  #--------------------------------------------------------------------------
+  # * Draw Playtime
+  #--------------------------------------------------------------------------
+  def draw_playtime(dx, dy, dw)
+    return if !@header
+    return if @header[:playtime_s].nil?
+    reset_font_settings
+    draw_icon(SPL::SAVE_ENGINE::PLAYTIME_ICON_INDEX,dx,dy)
+    change_color(normal_color)
+    draw_text(dx + 40, dy, dw - 40, line_height, @header[:playtime_s], 0)
+  end
+  
+  #--------------------------------------------------------------------------
+  # * Draw Characters
+  #--------------------------------------------------------------------------
+  def draw_characters
+    return if !@header
+    return if @header[:party].nil?
+    
+    reset_font_settings
+    ratio = 0.82
+    contents.font.size = 20
+    characters_contents_dx = contents.width - ((@header[:party].battle_members.size) * 96 * ratio + 5 * (@header[:party].battle_members.size-1))
+    dy = 0
+    dx = characters_contents_dx
+
+    @level_bg = Sprite.new
+    @level_bg.bitmap = Bitmap.new(contents.width, contents.height)
+    @level_bg.bitmap.font.size = 18
+    @level_bg.x += standard_padding
+    @level_bg.y += standard_padding
+    @level_bg.z = 105
+    
+    padding = 2
+    
+    @level_bg_height = @level_bg.bitmap.font.size
+    @level_bg_color = Color.new(0,0,0,128)
+    
+    for member in @header[:party].battle_members
+      next if member.nil?
+      
+      member = @header[:actors][member.id]
+      change_color(normal_color)
+      draw_resized_actor_face(ratio, member, dx, dy)
+      
+      text_lv_a = Vocab::level_a
+      lv_a_cx = text_size(text_lv_a).width
+      text_lv = member.level.to_s
+      lv_cx = text_size(text_lv).width
+      
+      @level_bg_width = lv_a_cx + lv_cx + 6
+      @level_bg.bitmap.fill_rect(96 * ratio-@level_bg_width+dx-padding, padding, @level_bg_width, @level_bg_height, @level_bg_color)
+      
+      @level_bg.bitmap.font.color = normal_color
+      @level_bg.bitmap.draw_text(dx - padding, padding, 96 * ratio - lv_cx - 3, @level_bg_height , text_lv_a, 2)
+      
+      @level_bg.bitmap.draw_text(dx - padding, padding, 96 * ratio, @level_bg_height , text_lv, 2)
+      
+      dx += 96 * ratio + 5
+    end
+    
+    return characters_contents_dx
+  end
+  
+  #--------------------------------------------------------------------------
+  # * Draw Face Graphic with Ratio
+  #     enabled : Enabled flag. When false, draw semi-transparently.
+  #--------------------------------------------------------------------------
+  def draw_resized_face(ratio, face_name, face_index, x, y, enabled = true)
+    bitmap = Cache.face(face_name)
+    new_size = 96 * ratio
+    resized_bitmap = Bitmap.new(bitmap.width * ratio, bitmap.height * ratio)
+    resized_bitmap.stretch_blt(resized_bitmap.rect, bitmap, bitmap.rect)
+    rect = Rect.new(face_index % 4 * new_size, face_index / 4 * new_size, new_size, new_size)
+    contents.blt(x, y, resized_bitmap, rect, enabled ? 255 : translucent_alpha)
+    bitmap.dispose
+    resized_bitmap.dispose
+  end
+  
+  #--------------------------------------------------------------------------
+  # * Draw Actor Face Graphic with Ratio
+  #--------------------------------------------------------------------------
+  def draw_resized_actor_face(ratio, actor, x, y, enabled = true)
+    draw_resized_face(ratio, actor.face_name, actor.face_index, x, y, enabled)
+  end
+  
+  #--------------------------------------------------------------------------
+  # * Draw Background
+  #--------------------------------------------------------------------------
+  def play_music
+    return if SPL::SAVE_ENGINE::LOADING_TYPE == :screenshot
+    if @header
+      system = @header[:system]
+      system.play_bgm_on_save
+      system.play_bgs_on_save
+    else
+      RPG::BGM.stop
+      RPG::BGS.stop
+      $game_map.screen.change_weather(:none, 0, 0)
+    end
+  end
+  
+  #--------------------------------------------------------------------------
+  # * Free Background
+  #--------------------------------------------------------------------------
+  def dispose_background
+    @background_sprite.dispose if @background_sprite
+    @top_background_sprite.dispose if @top_background_sprite
+    @level_bg.dispose if @level_bg
+  end
+  
+  #--------------------------------------------------------------------------
+  # * Free Background
+  #--------------------------------------------------------------------------
+  def stop_music
+    @background_sprite.dispose if @background_sprite
+  end
+  
+  #--------------------------------------------------------------------------
+  # * Free
+  #--------------------------------------------------------------------------
+  def dispose
+    dispose_background
+    super
+  end
+
+end # Window_SaveFileInfo
+
+
+#==============================================================================
+# ** Window_SaveOK
+#------------------------------------------------------------------------------
+#  This window displays the meassage after user was saved
+#==============================================================================
+
+class Window_SaveOK < Window_Base
+    
+  #--------------------------------------------------------------------------
+  # * Object Initialization
+  #--------------------------------------------------------------------------
+  def initialize(width = 360, text = "")
+    super(0, 0, width, fitting_height(1))
+    self.back_opacity = 96
+    set_text(text)
+  end
+  
+  #--------------------------------------------------------------------------
+  # * Set Text
+  #--------------------------------------------------------------------------
+  def set_text(text = "")
+    @text = text
+    refresh
+  end
+  
+  #--------------------------------------------------------------------------
+  # * Refresh
+  #--------------------------------------------------------------------------
+  def refresh
+    contents.clear
+    draw_text_ex(0, 0, @text)
+    self.x = Graphics.width/2 - self.width/2
+    self.y = Graphics.height/2 - self.height/2
+  end
+  
+end # Window_SaveOK
+
+
+
+#==============================================================================
+# ** Screen Capture by cremno
+#------------------------------------------------------------------------------
+# THANK YOU IN ADVANCE
+#==============================================================================
+
+# ★ Screenshot taker
+# ★★★★★★★★★★★★★★★★★★★★★★★
+#
+# Author/s : cremno
+# RGSS ver : 3.0.0, 3.0.1
+
+class Bitmap
+
+  def save(filename)
+    ext = File.extname(filename)[1..-1]
+    if ext.empty?
+      warn "Bitmap#save: filename doesn't have an extension (fallback to PNG)"
+      ext = :png
+      filename << '.png'
+    else
+      ext = ext.to_sym
+    end
+    retval = false
+    bitmap = Gdiplus::Bitmap.new(:scan0, width, height, scan0)
+    if bitmap
+      retval = bitmap.save(:file, filename, ext)
+      bitmap.dispose
+    end
+    retval
+  end
+
+  private
+
+  def _data_struct(offset = 0)
+    @_data_struct ||= (DL::CPtr.new((object_id << 1) + 16).ptr + 8).ptr
+    (@_data_struct + offset).ptr.to_i
+  end
+
+  def gdidib
+    @gdidib ||= [_data_struct(8), _data_struct(16)]
+  end
+
+  def hbitmap
+    @hbitmap ||= _data_struct(44)
+  end
+
+  def scan0
+    @scan0 ||= _data_struct(12)
+  end
+
+end
+
+# ★ Windows Wide Char Management
+# ★★★★★★★★★★★★★★★★★★★★★★★
+#
+# Author/s : cremno
+# RGSS ver : 3.0.0, 3.0.1
+
+class Encoding
+
+  UTF_8 ||= find('UTF-8')
+
+  UTF_16LE ||= find('UTF-16LE')
+
+end
+
+class String
+
+  unless method_defined?(:widen)
+    def widen
+      (self + "\0").encode(Encoding::UTF_16LE)
+    end
+  end
+
+  unless method_defined?(:widen!)
+    def widen!
+      self << "\0"
+      encode!(Encoding::UTF_16LE)
+    end
+  end
+
+  unless method_defined?(:narrow)
+    def narrow
+      chomp("\0").encode(Encoding::UTF_8)
+    end
+  end
+
+  unless method_defined?(:narrow!)
+    def narrow!
+      chomp!("\0")
+      encode!(Encoding::UTF_8)
+    end
+  end
+
+end
+
+
+# ★ GDI+ interface
+# ★★★★★★★★★★★★★★★★★★★★★★★
+#
+# Author/s : cremno
+# RGSS ver : 3.0.0, 3.0.1
+
+module Gdiplus
+
+  class GdiplusError < StandardError
+  end
+
+  DLL = DL.dlopen('gdiplus')
+
+  FUNCTIONS = {}
+  {
+    'GdiplusStartup' => DL::TYPE_INT,
+    'GdiplusShutdown' => DL::TYPE_VOID,
+    'GdipDisposeImage' => DL::TYPE_INT,
+    'GdipSaveImageToFile' => DL::TYPE_INT,
+    'GdipCreateBitmapFromGdiDib' => DL::TYPE_INT,
+    'GdipCreateBitmapFromHBITMAP' => DL::TYPE_INT,
+    'GdipCreateBitmapFromScan0' => DL::TYPE_INT
+  }.each do |name, type|
+    FUNCTIONS[name.to_sym] = DL::CFunc.new(DLL[name], type, name, :stdcall)
+  end
+
+  CLSIDS = {}
+  dll = DL.dlopen('ole32')
+  name = 'CLSIDFromString'
+  func = DL::CFunc.new(dll[name], DL::TYPE_LONG, name, :stdcall)
+  {
+    bmp: '{557cf400-1a04-11d3-9a73-0000f81ef32e}'.widen!,
+    jpg: '{557cf401-1a04-11d3-9a73-0000f81ef32e}'.widen!,
+    gif: '{557cf402-1a04-11d3-9a73-0000f81ef32e}'.widen!,
+    tif: '{557cf405-1a04-11d3-9a73-0000f81ef32e}'.widen!,
+    png: '{557cf406-1a04-11d3-9a73-0000f81ef32e}'.widen!
+  }.each do |format, string|
+    clsid = "\0" * 16
+    func.call([DL::CPtr[string].to_i, DL::CPtr[clsid].to_i])
+    CLSIDS[format] = clsid
+  end
+  CLSIDS[:jpeg] = CLSIDS[:jpg]
+  CLSIDS[:tiff] = CLSIDS[:tif]
+
+  @token = "\0" * DL::SIZEOF_VOIDP
+
+  def self.token
+    @token
+  end
+
+  # TODO: prepend prefix (Gdip or Gdiplus) automatically
+  def self.call(*args)
+    name = args.shift
+    
+    args.map! { |e| DL::CPtr[e].to_i }
+    r = FUNCTIONS[name].call(args)
+    if r && r != 0
+      fail GdiplusError,
+        "Status: #{r}\nFunction: #{name}\nArguments: #{args.inspect}"
+    end
+    true
+  end
+
+  def self.startup
+    input = [1].pack('L')             # GdiplusVersion
+    input << "\0" * DL::SIZEOF_VOIDP  # DebugEventCallback
+    input << "\0" * DL::SIZEOF_INT    # SuppressBackgroundThread
+    input << "\0" * DL::SIZEOF_INT    # SuppressExternalCodecs
+    call(:GdiplusStartup, @token, input, 0)
+  end
+
+  def self.shutdown
+    call(:GdiplusShutdown, @token)
+  end
+
+  class Image
+
+    attr_reader :instance
+
+    def initialize
+      @instance = 0
+      true
+    end
+
+    def save(destination, *args)
+      case destination
+      when :file
+        filename = args.shift << "\0"
+        filename.encode!('UTF-16LE')
+        argv = [:GdipSaveImageToFile, filename, Gdiplus::CLSIDS[args.shift], 0]
+      else
+        fail ArgumentError, "unknown GDI+ image destination: #{source}"
+      end
+      argv.insert(1, @instance)
+      Gdiplus.call(*argv)
+    end
+
+    def dispose
+      Gdiplus.call(:GdipDisposeImage, @instance)
+    end
+
+  end
+
+  class Bitmap < Image
+
+    def initialize(source, *args)
+      case source
+      when :gdidib
+        argv = [:GdipCreateBitmapFromGdiDib, args.shift, args.shift]
+      when :hbitmap
+        argv = [:GdipCreateBitmapFromHBITMAP, args.shift, 0]
+      when :scan0
+        w = args.shift
+        h = args.shift
+        stride = w * -4    # BGRA, mirrored
+        format = 0x26200A  # PixelFormat32bppARGB
+        scan0 = args.shift
+        argv = [:GdipCreateBitmapFromScan0, w, h, stride, format, scan0]
+      else
+        fail ArgumentError, "unknown GDI+ bitmap source: #{source}"
+      end
+      argv << "\0" * DL::SIZEOF_VOIDP
+      r = Gdiplus.call(*argv)
+      @instance = r ? argv[-1].unpack(DL::SIZEOF_VOIDP == 4 ? 'L' : 'Q')[0] : 0
+      r
+    end
+
+  end
+
+end
+
+Gdiplus.startup
+class << SceneManager
+  alias_method :exit_wo_gdip_shutdown, :exit
+  def exit
+    exit_wo_gdip_shutdown
+    Gdiplus.shutdown
+  end
+end
+
+#==============================================================================
+# ** The End of File
+#==============================================================================
