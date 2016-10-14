@@ -25,32 +25,32 @@
 
 (function() {
 
-  Game_Actor.prototype.skills = function() {
-    var list = [];
-    this._skills.concat(this.addedSkills()).forEach(function(id) {
-        if (!list.contains($dataSkills[id])) {
-            list.push($dataSkills[id]);
+    Game_Actor.prototype.skills = function() {
+        var list = [];
+        this._skills.concat(this.addedSkills()).forEach(function(id) {
+            if (!list.contains($dataSkills[id])) {
+                list.push($dataSkills[id]);
+            }
+        });
+        var equips = this._equips;
+        for (var i = 0; i < equips.length; i++) {
+            var type = equips[i]._dataClass;
+            var id = equips[i]._itemId;
+            if (id === 0) continue;
+
+            var data;
+            if (type === 'weapon') data = $dataWeapons[id];
+            if (type === 'armor') data = $dataArmors[id];
+
+            if (data.meta.eq_skills === undefined) continue;
+            var skills = JsonEx.parse(data.meta.eq_skills);
+
+            for (var j = 0; j < skills.length; j++) {
+                if (this._level >= skills[j][1] && !list.contains($dataSkills[skills[j][0]]))
+                    list.push($dataSkills[skills[j][0]]);
+            }
         }
-    });
-    var equips = this._equips;
-    for (var i = 0; i < equips.length; i++) {
-      var type = equips[i]._dataClass;
-      var id = equips[i]._itemId;
-      if(id === 0) continue;
-
-      var data;
-      if(type === 'weapon') data = $dataWeapons[id];
-      if(type === 'armor') data = $dataArmors[id];
-
-      if(data.meta.eq_skills === undefined) continue;
-      var skills = JsonEx.parse(data.meta.eq_skills);
-
-      for (var j = 0; j < skills.length; j++) {
-        if(this._level >= skills[j][1] && !list.contains($dataSkills[skills[j][0]]))
-          list.push($dataSkills[skills[j][0]]);
-      }
-    }
-    return list;
-  };
+        return list;
+    };
 
 })();

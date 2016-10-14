@@ -36,7 +36,7 @@
     var parameters = PluginManager.parameters('SPL_SaveConfirmation');
     var textConfirm = parameters['Confirm text'];
     var textCancel = parameters['Cancel text'];
-    var defaultChoice = (parameters['Default choice'].toUpperCase()==='CONFIRM')?0:1;
+    var defaultChoice = (parameters['Default choice'].toUpperCase() === 'CONFIRM') ? 0 : 1;
     var width = Number(parameters['Width'] || 240);
 
     var _Scene_File_create = Scene_File.prototype.create;
@@ -48,8 +48,8 @@
     Scene_File.prototype.createSaveConfirmationWindow = function() {
         this._commandSaveConfirmation = new Window_SaveConfirmationCommand(Graphics.boxWidth, 0);
         this._commandSaveConfirmation.setHandler('overwrite_choice', this.commandOverwriteChoice.bind(this));
-        this._commandSaveConfirmation.setHandler('cancel_choice',    this.commandCancelChoice.bind(this));
-        this._commandSaveConfirmation.setHandler('cancel',    this.commandCancel.bind(this));
+        this._commandSaveConfirmation.setHandler('cancel_choice', this.commandCancelChoice.bind(this));
+        this._commandSaveConfirmation.setHandler('cancel', this.commandCancel.bind(this));
         this.addWindow(this._commandSaveConfirmation);
         this._commandSaveConfirmation.deactivate();
         this._commandSaveConfirmation.hide();
@@ -76,7 +76,7 @@
 
 
     Scene_Save.prototype.onSavefileOk = function() {
-        if(!DataManager.isThisGameFile(this.savefileId()))
+        if (!DataManager.isThisGameFile(this.savefileId()))
             this.commandOverwriteChoice();
         else {
             SoundManager.playOk();
@@ -114,8 +114,7 @@
         this.addCommand(textCancel, 'cancel_choice', true);
     };
 
-    Window_SaveConfirmationCommand.prototype.playOkSound = function() {
-    };
+    Window_SaveConfirmationCommand.prototype.playOkSound = function() {};
 
 
 })();
