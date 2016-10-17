@@ -1,6 +1,6 @@
 //=============================================================================
 // SPL_SellPrice.js
-// Version 1.0
+// Version 1.1
 // Created by Splendith
 //=============================================================================
 
@@ -50,6 +50,7 @@
         this._sellArmors = {};
     }
 
+    var _Scene_Shop_sellingPrice = Scene_Shop.prototype.sellingPrice;
     Scene_Shop.prototype.sellingPrice = function() {
         var id = this._item.id;
 
@@ -63,7 +64,7 @@
             return $gameTemp._sellArmors[id];
         }
 
-        return Math.floor(this._item.price / 2);
+        return _Scene_Shop_sellingPrice.call(this);
     };
 
     var _Scene_Shop_terminate = Scene_Shop.prototype.terminate;
