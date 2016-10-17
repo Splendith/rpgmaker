@@ -1,0 +1,87 @@
+#==============================================================================
+# Score and HP Window for RPG Maker VX / VX ACE
+#------------------------------------------------------------------------------
+# Author: Splendith
+# Version: 1.0
+# Last Updated: 2016-10-17
+# Created: 2016-10-17
+#------------------------------------------------------------------------------
+#
+# Terms of use:
+#
+#   - Free to use in any non-commercial project
+#   - No credits required
+#
+#==============================================================================
+
+module SCORE_PANEL
+  SHOW_SWITCH = 1
+  SCORE_VARIABLE = 1
+  HP_PARTY_MEMBER = 0         # Party member that show HP on the screen, first member (or leader) is 0
+
+  SCORE_TEXT = "Score: %d"
+  BG_OPACITY = 0              # 0 - 255
+
+  WINDOW_WIDTH = 200
+end
+
+class Window_Score < Window_Base
+
+  def initialize
+    super(0, 0, window_width, window_height)
+    self.opacity = SCORE_PANEL::BG_OPACITY
+    refresh
+  end
+
+  def update
+    super
+    refresh
+  end
+
+  def window_width
+    return SCORE_PANEL::WINDOW_WIDTH
+  end
+
+  def window_height
+    return line_height*2 + 32
+  end
+
+  def line_height
+    if defined?(super)
+      return super
+    else
+      return WLH
+    end
+  end
+
+  def refresh
+    self.visible = $game_switches[SCORE_PANEL::SHOW_SWITCH]
+    contents.clear
+    make_score
+  end
+
+  def make_score
+    text = sprintf(SCORE_PANEL::SCORE_TEXT, $game_variables[SCORE_PANEL::SCORE_VARIABLE])
+    self.contents.draw_text(0, 0, window_width - 32, line_height, text)
+    self.draw_actor_hp($game_party.members[SCORE_PANEL::HP_PARTY_MEMBER], 0, line_height, window_width - 32)
+  end
+
+end
+
+class Scene_Map < Scene_Base
+  alias cur_start start
+  def start
+    cur_start
+    make_window
+  end
+
+  def make_window
+    @score_window = Window_Score.new
+  end
+
+  alias cur_update update
+  def update
+    cur_update
+    @score_window.update
+  end
+end
