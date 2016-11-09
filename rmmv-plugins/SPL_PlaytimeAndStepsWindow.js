@@ -1,6 +1,6 @@
 //=============================================================================
 // SPL_PlaytimeAndStepsWindow.js
-// Version 1.0
+// Version 1.1
 // Created by Splendith
 //=============================================================================
 
@@ -156,7 +156,8 @@
     };
 
     Window_GameStat.prototype.update = function() {
-        this.refresh();
+        if(Graphics.frameCount % 60 == 0)
+            this.refresh();
     };
 
     Window_GameStat.prototype.open = function() {
