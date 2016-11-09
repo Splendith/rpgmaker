@@ -1,6 +1,6 @@
 //=============================================================================
 // SPL_PlaytimeAndStepsWindow.js
-// Version 1.2
+// Version 1.21
 // Created by Splendith
 //=============================================================================
 
@@ -97,7 +97,7 @@
     // New
     Scene_Menu.prototype.createStatWindow = function() {
         this._statWindow = new Window_GameStat(0, 0);
-        this._statWindow.y = Graphics.boxHeight - this._goldWindow.height - this._statWindow.height;
+        this._statWindow.y = Graphics.boxHeight - this._statWindow.fittingHeight(1) - this._statWindow.height;
         this.addWindow(this._statWindow);
     };
 
