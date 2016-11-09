@@ -1,6 +1,6 @@
 //=============================================================================
 // SPL_PlaytimeAndStepsWindow.js
-// Version 1.1
+// Version 1.2
 // Created by Splendith
 //=============================================================================
 
@@ -77,9 +77,11 @@
     //-----------------------------------------------------------------------------
 
     // Override
-    var _Scene_Menu_prototype_create = Scene_Menu.prototype.create;
     Scene_Menu.prototype.create = function() {
-        _Scene_Menu_prototype_create.call(this);
+        Scene_MenuBase.prototype.create.call(this);
+        this.createCommandWindow();
+
+        // Added
         if (lineCount > 0 && !(lineCount === 1 && showCaption)) {
             this.createStatWindow();
         } else if (lineCount <= 0) {
@@ -87,6 +89,9 @@
         } else if (lineCount === 1 && showCaption) {
             console.warn("The SPL_PlaytimeAndStepsWindow will not activate because you are showing only 'display caption' module in display settings.");
         }
+
+        this.createGoldWindow();
+        this.createStatusWindow();
     };
 
     // New
